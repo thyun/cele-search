@@ -1,36 +1,62 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# cele-search
 
-## Getting Started
+연예인이 광고하는 상품을 다루는 **롱폼(4분 이상)** YouTube 컨텐츠를, **최근 6개월** 범위에서
+검색하고 조회수 + 최신성 기준으로 **핫한 순**으로 보여주는 Next.js 웹앱입니다.
 
-First, run the development server:
+## 주요 기능
+
+- 기본 키워드(`연예인 광고`, `셀럽 PPL`, `스타 협찬` 등)로 자동 검색 + 연예인/상품명을 직접
+  입력해 추가 검색 가능
+- 최근 6개월 내 업로드된 영상만 검색
+- 4분 미만(YouTube Shorts 등) 영상은 결과에서 제외
+- 조회수와 업로드 최신성을 함께 반영한 점수로 정렬 후 상위 20개 표시
+- 검색 결과를 `data/results/` 폴더에 JSON 파일로 저장(기록/캐시용)
+
+## 사전 준비: YouTube Data API 키 발급
+
+1. [Google Cloud Console](https://console.cloud.google.com/)에서 프로젝트 생성
+2. **YouTube Data API v3** 활성화
+3. API 키(사용자 인증 정보) 발급
+
+## 설치 및 실행
+
+```bash
+npm install
+```
+
+프로젝트 루트의 `.env` 파일을 열어 발급받은 키를 입력하세요.
+
+```bash
+# .env
+YOUTUBE_API_KEY=발급받은_API_키
+```
+
+`.env.example` 파일을 참고해 새 환경에서도 동일하게 설정할 수 있습니다.
+`.env`는 `.gitignore`에 포함되어 있어 저장소에 커밋되지 않습니다.
+
+개발 서버 실행:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+브라우저에서 `http://localhost:3000` 접속 후, 검색어(연예인 이름/상품명)를 입력하거나
+비워둔 채로 검색 버튼을 누르면 기본 키워드로 검색됩니다.
+브라우저 JavaScript가 아직 준비되지 않았거나 비활성화되어 있어도, 일반 폼 제출로
+서버에서 검색한 결과를 표시합니다. API 오류나 결과가 없는 경우도 화면에 표시합니다.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 디렉터리 구조
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- `src/lib/youtube.ts` — YouTube Data API 검색/필터/점수 계산 로직
+- `src/app/api/search/route.ts` — 검색 API 라우트 (결과를 JSON 파일로도 저장)
+- `src/lib/search.ts` — API와 일반 폼 제출에서 공유하는 검색/JSON 저장 처리
+- `src/app/page.tsx` — 일반 폼 제출의 서버 검색 및 결과 렌더링
+- `src/app/search-form.tsx` — 검색 UI 및 결과 화면 (JavaScript 사용 시 비동기 검색)
+- `data/results/` — 검색 결과 JSON 저장 위치 (git에 커밋되지 않음)
 
-## Learn More
+## YouTube API 할당량 주의사항
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+YouTube Data API v3는 기본적으로 하루 10,000 units를 제공하며, `search.list` 호출 1회당
+100 units가 소모됩니다. 이 앱은 검색 1회당 기본 키워드 5개(+ 사용자 키워드 입력 시 1개)를
+조회하므로, 호출 1회에 약 500~600 units가 소모됩니다. 과도한 반복 검색 시 할당량이 조기
+소진될 수 있습니다.

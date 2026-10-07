@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { searchAndSaveResults } from "@/lib/search";
+import { InvalidSearchCursorError, searchAndSaveResults } from "@/lib/search";
 
 export async function GET(request: NextRequest) {
   const q = request.nextUrl.searchParams.get("q") ?? undefined;
+  const cursor = request.nextUrl.searchParams.get("cursor") ?? undefined;
 
   try {
-    return NextResponse.json(await searchAndSaveResults(q));
+    return NextResponse.json(await searchAndSaveResults(q, cursor));
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json(
+      { error: message },
+      { status: error instanceof InvalidSearchCursorError ? 400 : 500 },
+    );
   }
 }

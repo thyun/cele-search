@@ -8,13 +8,12 @@
  * 3. Filter out anything shorter than 4 minutes (longform threshold, i.e.
  *    excludes YouTube Shorts and short clips).
  * 4. Score by view count weighted by recency ("hot" content first) and
- *    return the top N results.
+ *    return the page's results and continuation state.
  */
 
 const YOUTUBE_API_BASE = "https://www.googleapis.com/youtube/v3";
 const SIX_MONTHS_MS = 1000 * 60 * 60 * 24 * 30 * 6;
 const LONGFORM_MIN_SECONDS = 4 * 60;
-const DEFAULT_RESULT_COUNT = 20;
 
 /** Base keyword set covering celebrity product advertisement content. */
 export const DEFAULT_KEYWORDS = [
@@ -118,7 +117,8 @@ async function searchVideoIdsForKeyword(
   keyword: string,
   publishedAfter: string,
   apiKey: string,
-): Promise<Map<string, string>> {
+  pageToken?: string,
+) {
   const params = new URLSearchParams({
     key: apiKey,
     q: keyword,
@@ -126,10 +126,11 @@ async function searchVideoIdsForKeyword(
     type: "video",
     order: "viewCount",
     publishedAfter,
-    maxResults: "25",
+    maxResults: "50",
     relevanceLanguage: "ko",
   });
-  const data = await fetchJson<{ items: SearchListItem[] }>(
+  if (pageToken) params.set("pageToken", pageToken);
+  const data = await fetchJson<{ items: SearchListItem[]; nextPageToken?: string }>(
     `${YOUTUBE_API_BASE}/search?${params.toString()}`,
   );
   const map = new Map<string, string>();
@@ -137,7 +138,7 @@ async function searchVideoIdsForKeyword(
     const id = item.id?.videoId;
     if (id) map.set(id, keyword);
   }
-  return map;
+  return { videoIds: map, nextPageToken: data.nextPageToken ?? null };
 }
 
 async function fetchVideoDetails(
@@ -162,18 +163,21 @@ async function fetchVideoDetails(
   return results;
 }
 
+export interface SearchContinuation {
+  publishedAfter: string;
+  keywords: { keyword: string; pageToken: string | null }[];
+  seenVideoIds: string[];
+}
+
 export interface SearchOptions {
-  /** Optional user-provided celebrity/product keyword to add to the default set. */
   userKeyword?: string;
-  /** Max number of results to return. */
-  resultCount?: number;
+  continuation?: SearchContinuation;
 }
 
 export async function searchCelebrityAdLongformVideos(
   options: SearchOptions = {},
-): Promise<YoutubeSearchResult[]> {
+) {
   const apiKey = getApiKey();
-  const resultCount = options.resultCount ?? DEFAULT_RESULT_COUNT;
   const keywords = [...DEFAULT_KEYWORDS];
   const userKeyword = options.userKeyword?.trim();
   if (userKeyword) {
@@ -181,17 +185,26 @@ export async function searchCelebrityAdLongformVideos(
     keywords.unshift(`${userKeyword} 광고`);
   }
 
-  const publishedAfter = new Date(Date.now() - SIX_MONTHS_MS).toISOString();
+  const state: SearchContinuation = options.continuation ?? {
+    publishedAfter: new Date(Date.now() - SIX_MONTHS_MS).toISOString(),
+    keywords: keywords.map((keyword) => ({ keyword, pageToken: "" })),
+    seenVideoIds: [],
+  };
+  const seen = new Set(state.seenVideoIds);
 
   const keywordByVideoId = new Map<string, string>();
   const searchResults = await Promise.all(
-    keywords.map((keyword) =>
-      searchVideoIdsForKeyword(keyword, publishedAfter, apiKey),
+    state.keywords.map(async ({ keyword, pageToken }) =>
+      pageToken === null
+        ? { videoIds: new Map<string, string>(), nextPageToken: null }
+        : searchVideoIdsForKeyword(
+            keyword, state.publishedAfter, apiKey, pageToken || undefined,
+          ),
     ),
   );
-  for (const map of searchResults) {
-    for (const [videoId, keyword] of map) {
-      if (!keywordByVideoId.has(videoId)) {
+  for (const page of searchResults) {
+    for (const [videoId, keyword] of page.videoIds) {
+      if (!seen.has(videoId) && !keywordByVideoId.has(videoId)) {
         keywordByVideoId.set(videoId, keyword);
       }
     }
@@ -230,5 +243,15 @@ export async function searchCelebrityAdLongformVideos(
   }
 
   results.sort((a, b) => b.hotScore - a.hotScore);
-  return results.slice(0, resultCount);
+  return {
+    results,
+    continuation: {
+      publishedAfter: state.publishedAfter,
+      keywords: state.keywords.map((entry, index) => ({
+        keyword: entry.keyword,
+        pageToken: searchResults[index].nextPageToken,
+      })),
+      seenVideoIds: [...seen, ...videoIds],
+    } satisfies SearchContinuation,
+  };
 }

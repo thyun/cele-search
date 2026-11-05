@@ -36,6 +36,7 @@ yarn-error.log*
 
 # saved search results
 /data/results/
+/data/*.db*
 
 # vercel
 .vercel

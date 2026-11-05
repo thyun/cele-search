@@ -1,13 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import type { YoutubeSearchResult } from "@/lib/youtube";
+import type { VideoResult } from "@/lib/search";
 
 export interface SearchResponse {
   query: string | null;
-  savedAt: string;
-  savedFile: string;
-  results: YoutubeSearchResult[];
+  results: VideoResult[];
   nextCursor: string | null;
   error?: string;
 }
@@ -44,7 +42,6 @@ export default function SearchForm({
   const [query, setQuery] = useState(initialQuery);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [moreMessage, setMoreMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(initialError);
   const [data, setData] = useState<SearchResponse | null>(initialData);
 
@@ -52,7 +49,6 @@ export default function SearchForm({
     e.preventDefault();
     setLoading(true);
     setError(null);
-    setMoreMessage(null);
     try {
       const params = new URLSearchParams();
       if (query.trim()) params.set("q", query.trim());
@@ -75,15 +71,12 @@ export default function SearchForm({
     if (!data?.nextCursor || loadingMore || loading) return;
     setLoadingMore(true);
     setError(null);
-    setMoreMessage(null);
     try {
       const params = new URLSearchParams({ cursor: data.nextCursor });
+      if (data.query) params.set("q", data.query);
       const res = await fetch(`/api/search?${params}`);
       const json: SearchResponse = await res.json();
       if (!res.ok) throw new Error(json.error ?? "추가 검색에 실패했습니다.");
-      if (json.results.length === data.results.length && json.nextCursor) {
-        setMoreMessage("이번 페이지에는 추가 롱폼 영상이 없습니다. 더보기를 눌러 다음 페이지를 검색할 수 있습니다.");
-      }
       setData(json);
     } catch (err) {
       setError(err instanceof Error ? err.message : "추가 검색에 실패했습니다.");
@@ -99,8 +92,8 @@ export default function SearchForm({
           연예인 광고 롱폼 컨텐츠 검색
         </h1>
         <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-          최근 6개월 내 업로드된 4분 이상 롱폼 영상 중, 조회수와 최신성을
-          반영한 &quot;핫한&quot; 순으로 최대 20개씩 보여줍니다.
+          최근 6개월 내 업로드된 4분 이상 롱폼 영상 중, 구독자 수 대비 조회수가
+          높은 순으로 20개씩 보여줍니다.
         </p>
 
         <form action="/" method="get" onSubmit={handleSearch} className="mt-6 flex gap-2">
@@ -123,11 +116,11 @@ export default function SearchForm({
           </button>
         </form>
         <p className="mt-2 text-xs text-zinc-500">
-          키워드를 비워두면 연예인 광고·PPL·협찬 기본 키워드로 검색합니다.
+          검색어는 영상/채널 제목에서 찾으며, 비워두면 전체 수집 영상을 보여줍니다.
         </p>
         {loading && (
           <p role="status" className="mt-4 text-sm text-zinc-500">
-            YouTube에서 기본 키워드와 입력한 검색어에 맞는 영상을 찾고 있습니다.
+            수집된 영상에서 검색하고 있습니다.
           </p>
         )}
 
@@ -140,7 +133,7 @@ export default function SearchForm({
         {data && (
           <>
             <p className="mt-6 text-xs text-zinc-500 dark:text-zinc-400">
-              결과 {data.results.length}건 · 저장 위치: {data.savedFile}
+              결과 {data.results.length}건
             </p>
             <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {data.results.map((video) => (
@@ -168,11 +161,12 @@ export default function SearchForm({
                       {formatDuration(video.durationSeconds)}
                     </p>
                     <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-300">
-                      조회수 {formatNumber(video.viewCount)} · 좋아요{" "}
-                      {formatNumber(video.likeCount)}
+                      구독자{" "}
+                      {video.subscriberCount === null ? "비공개" : formatNumber(video.subscriberCount)} ·
+                      조회수 {formatNumber(video.viewCount)}
                     </p>
                     <p className="mt-auto text-xs font-medium text-zinc-900 dark:text-zinc-50">
-                      핫함 점수 {formatNumber(Math.round(video.hotScore))}
+                      구독자 대비 조회 {video.efficiencyScore.toFixed(1)}배
                     </p>
                   </div>
                 </a>
@@ -196,11 +190,6 @@ export default function SearchForm({
               </form>
             ) : (
               <p className="mt-6 text-center text-sm text-zinc-500">마지막 검색 결과입니다.</p>
-            )}
-            {(loadingMore || moreMessage) && (
-              <p role="status" className="mt-3 text-center text-sm text-zinc-500">
-                {loadingMore ? "다음 검색 페이지에서 롱폼 영상을 찾고 있습니다." : moreMessage}
-              </p>
             )}
           </>
         )}

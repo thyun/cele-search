@@ -1,5 +1,5 @@
 import SearchForm from "./search-form";
-import { searchAndSaveResults } from "@/lib/search";
+import { searchVideos } from "@/lib/search";
 
 export default async function Home({ searchParams }: PageProps<"/">) {
   const params = await searchParams;
@@ -12,7 +12,7 @@ export default async function Home({ searchParams }: PageProps<"/">) {
   let data = null;
   let error = null;
   try {
-    data = await searchAndSaveResults(query, cursor);
+    data = searchVideos(query, cursor);
   } catch (cause) {
     error = cause instanceof Error ? cause.message : "검색에 실패했습니다.";
   }

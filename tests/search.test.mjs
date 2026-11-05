@@ -35,17 +35,27 @@ test("searchVideos ranks by efficiency, filters by query, and pages with a curso
     const insert = db.prepare("INSERT INTO videos VALUES (?, ?, ?, ?, NULL, 300, 10, 1, 1, ?)");
     for (let i = 0; i < 25; i++) insert.run(`v${i}`, "C1", `영상 ${i}`, "2026-01-01", i);
     insert.run("pct", "C2", "100% 협찬", "2026-01-01", 100);
+    for (const duration of [60, 180, 181, 239, 240]) {
+      insert.run(`duration-${duration}`, "C1", "길이 경계값", "2026-01-01", 1000);
+      db.prepare("UPDATE videos SET duration_seconds = ? WHERE video_id = ?")
+        .run(duration, `duration-${duration}`);
+    }
     db.close();
 
     const first = searchVideos();
     assert.equal(first.results.length, 20);
-    assert.equal(first.results[0].videoId, "pct");
-    assert.equal(first.results[0].subscriberCount, null);
-    assert.equal(first.results[1].videoId, "v24");
+    assert.equal(first.results[0].videoId, "duration-240");
+    assert.equal(first.results[1].videoId, "pct");
+    assert.equal(first.results[1].subscriberCount, null);
+    assert.equal(first.results[2].videoId, "v24");
     assert.equal(first.nextCursor, "20");
 
     const second = searchVideos("", first.nextCursor);
-    assert.equal(second.results.length, 26);
+    assert.equal(second.results.length, 27);
+    assert.deepEqual(
+      second.results.filter((v) => v.videoId.startsWith("duration-")).map((v) => v.videoId),
+      ["duration-240"],
+    );
     assert.equal(second.nextCursor, null);
 
     assert.deepEqual(searchVideos("100%").results.map((v) => v.videoId), ["pct"]);

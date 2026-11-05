@@ -1,6 +1,7 @@
 /**
  * Manual batch: discover channels via search.list, then collect each channel's
- * recent longform videos and rank them by views relative to subscribers.
+ * recent videos (including Shorts candidates) and rank them by views relative
+ * to subscribers.
  *
  * Usage: npm run batch -- [--pages=2] [--keyword=추가키워드] [--skip-discover]
  *
@@ -10,11 +11,12 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { initializeDatabase } from "./database.mjs";
 
 const API = "https://www.googleapis.com/youtube/v3";
 const DB_PATH = process.env.DB_PATH ?? path.join("data", "cele-search.db");
 const SIX_MONTHS_MS = 1000 * 60 * 60 * 24 * 30 * 6;
-const LONGFORM_MIN_SECONDS = 4 * 60;
+const SHORTS_MAX_SECONDS = 3 * 60;
 const MIN_SUBSCRIBERS = 1000; // floor so tiny/hidden-sub channels don't explode the ratio
 const DEFAULT_KEYWORDS = [
   "연예인 광고",
@@ -62,31 +64,7 @@ const chunk = (arr, size) =>
 
 mkdirSync(path.dirname(DB_PATH), { recursive: true });
 const db = new DatabaseSync(DB_PATH);
-db.exec(`
-  CREATE TABLE IF NOT EXISTS channels (
-    channel_id TEXT PRIMARY KEY,
-    title TEXT NOT NULL,
-    subscriber_count INTEGER,
-    uploads_playlist_id TEXT,
-    discovered_keyword TEXT,
-    discovered_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-  );
-  CREATE TABLE IF NOT EXISTS videos (
-    video_id TEXT PRIMARY KEY,
-    channel_id TEXT NOT NULL REFERENCES channels(channel_id),
-    title TEXT NOT NULL,
-    published_at TEXT NOT NULL,
-    thumbnail_url TEXT,
-    duration_seconds INTEGER NOT NULL,
-    view_count INTEGER NOT NULL,
-    like_count INTEGER NOT NULL,
-    comment_count INTEGER NOT NULL,
-    efficiency_score REAL NOT NULL,
-    updated_at TEXT NOT NULL
-  );
-  CREATE INDEX IF NOT EXISTS idx_videos_score ON videos(efficiency_score DESC);
-`);
+initializeDatabase(db);
 
 const now = new Date().toISOString();
 const cutoff = new Date(Date.now() - SIX_MONTHS_MS).toISOString();
@@ -167,35 +145,40 @@ async function collectVideos() {
 
   const upsert = db.prepare(
     `INSERT INTO videos (video_id, channel_id, title, published_at, thumbnail_url, duration_seconds,
-       view_count, like_count, comment_count, efficiency_score, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       view_count, like_count, comment_count, efficiency_score, updated_at, is_short)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(video_id) DO UPDATE SET
        title = excluded.title, thumbnail_url = excluded.thumbnail_url,
        view_count = excluded.view_count, like_count = excluded.like_count,
        comment_count = excluded.comment_count, efficiency_score = excluded.efficiency_score,
+       duration_seconds = excluded.duration_seconds, is_short = excluded.is_short,
        updated_at = excluded.updated_at`,
   );
   let saved = 0;
+  let shorts = 0;
   for (const batch of chunk([...new Set(videoIds)], 50)) {
     const data = await call(
       "videos", { id: batch.join(","), part: "snippet,contentDetails,statistics" }, 1,
     );
     for (const v of data.items ?? []) {
       const duration = parseDuration(v.contentDetails?.duration ?? "");
-      if (duration < LONGFORM_MIN_SECONDS) continue;
+      if (duration <= 0) continue;
+      // Public API metadata cannot confirm Shorts; duration identifies candidates only.
+      const isShort = duration <= SHORTS_MAX_SECONDS ? 1 : 0;
       const views = Number(v.statistics?.viewCount ?? 0);
       const subs = Math.max(subsByChannel.get(v.snippet.channelId) ?? 0, MIN_SUBSCRIBERS);
       upsert.run(
         v.id, v.snippet.channelId, v.snippet.title, v.snippet.publishedAt,
         v.snippet.thumbnails?.medium?.url ?? v.snippet.thumbnails?.default?.url ?? "",
         duration, views, Number(v.statistics?.likeCount ?? 0),
-        Number(v.statistics?.commentCount ?? 0), views / subs, now,
+        Number(v.statistics?.commentCount ?? 0), views / subs, now, isShort,
       );
       saved++;
+      shorts += isShort;
     }
   }
   const pruned = db.prepare("DELETE FROM videos WHERE published_at < ?").run(cutoff);
-  console.log(`saved ${saved} longform videos, pruned ${pruned.changes} old ones`);
+  console.log(`saved ${saved} videos (${shorts} Shorts candidates), pruned ${pruned.changes} old ones`);
 }
 
 if (!skipDiscover) await discoverChannels();

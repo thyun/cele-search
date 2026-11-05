@@ -5,7 +5,8 @@
 
 ## 주요 기능
 
-- 수동 배치(`npm run batch`)가 YouTube API로 채널을 발굴해 SQLite(`data/cele-search.db`)에 저장
+- 채널 배치(`npm run batch:channels`)가 YouTube API로 채널을 발굴하고 정보를 갱신해 SQLite(`data/cele-search.db`)에 저장
+- 영상 배치(`npm run batch:videos`)는 기존 채널 정보를 갱신한 뒤 영상을 수집 (새 채널 검색 없음)
 - 채널별 최근 영상 최대 30개 중 6개월 이내 영상을 쇼츠 후보까지 함께 수집
 - DB의 `videos.is_short`는 1초~3분 영상을 `1`, 나머지는 `0`으로 저장 (길이 기반 추정이며 실제 쇼츠 여부를 보장하지 않음)
 - 웹 검색은 영상 길이와 쇼츠 여부를 구분하지 않고 수집된 영상을 함께 표시
@@ -39,12 +40,17 @@ YOUTUBE_API_KEY=발급받은_API_키
 데이터 수집 (수동 배치, Node 22.5+ 필요):
 
 ```bash
-npm run batch                                  # 기본 키워드 5개 × 2페이지로 채널 발굴 + 영상 갱신
-npm run batch -- --pages=3 --keyword=손흥민    # 페이지 수 / 추가 키워드
-npm run batch -- --skip-discover               # 발굴 없이 저장된 채널의 영상만 갱신 (쿼터 거의 0)
+npm run batch:channels                            # 기본 키워드 5개 × 2페이지로 채널 발굴 + 구독자 수·uploads ID 갱신
+npm run batch:channels -- --pages=3 --keyword=손흥민 # 페이지 수 / 추가 키워드
+npm run batch:channels -- --skip-discover           # 새 채널 발굴 없이 기존 채널 정보만 갱신
+npm run batch:videos                              # 기존 채널 정보 갱신 후 롱폼·쇼츠 영상 수집 및 점수 갱신
+npm run batch                                     # 기존 호환: 채널 배치와 영상 배치를 순서대로 실행
 ```
 
-배치 쿼터: `search.list` 100 units/회(기본 약 1,000 units) + 채널당 `playlistItems` 1 unit.
+처음에는 채널 배치 실행 후 영상 배치를 실행합니다. 이후 영상만 갱신하려면 `batch:videos`만 실행하면 됩니다.
+영상 배치도 기존 채널의 구독자 수·uploads ID를 먼저 갱신하므로 최신 구독자 수로 영상 점수를 계산합니다.
+채널 배치 쿼터: `search.list` 100 units/회(기본 약 1,000 units) + `channels.list` 50개당 1 unit.
+영상 배치 쿼터: `channels.list` 50개당 1 unit + 채널당 `playlistItems.list` 1 unit + `videos.list` 50개당 1 unit (`search.list` 호출 없음).
 `DB_PATH` 환경변수로 DB 위치를 바꿀 수 있습니다.
 기존 DB는 배치 실행 시 `is_short` 필드를 자동으로 추가하고 기존 영상의 길이를 기준으로 값을 채웁니다.
 이전에 제외됐던 짧은 영상은 다음 배치에서 채널별 최근 영상 조회 범위에 포함되면 저장됩니다.

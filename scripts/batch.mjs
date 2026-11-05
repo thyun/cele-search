@@ -3,7 +3,10 @@
  * recent videos (including Shorts candidates) and rank them by views relative
  * to subscribers.
  *
- * Usage: npm run batch -- [--pages=2] [--keyword=추가키워드] [--skip-discover]
+ * Usage:
+ *   npm run batch:channels -- [--pages=2] [--keyword=추가키워드] [--skip-discover]
+ *   npm run batch:videos
+ *   npm run batch -- [--pages=2] [--keyword=추가키워드] [--skip-discover] (both)
  *
  * Quota (units): search.list 100/call, channels.list 1/50 channels,
  * playlistItems.list 1/channel, videos.list 1/50 videos.
@@ -28,6 +31,13 @@ const DEFAULT_KEYWORDS = [
 ];
 
 const args = process.argv.slice(2);
+const mode = args[0] && !args[0].startsWith("--") ? args.shift() : "all";
+if (!["all", "channels", "videos"].includes(mode)) {
+  throw new Error(`Unknown batch mode: ${mode}. Use channels or videos.`);
+}
+if (mode === "videos" && args.length > 0) {
+  throw new Error("The videos batch takes no discovery options. Use npm run batch:channels instead.");
+}
 const pages = Number(
   args.find((a) => a.startsWith("--pages="))?.split("=")[1] ?? 2,
 );
@@ -191,8 +201,11 @@ async function collectVideos() {
   console.log(`saved ${saved} videos (${shorts} Shorts candidates), pruned ${pruned.changes} old ones`);
 }
 
-if (!skipDiscover) await discoverChannels();
-await refreshChannels();
-await collectVideos();
-console.log(`done. estimated quota used: ${quota} units. db: ${DB_PATH}`);
-db.close();
+try {
+  if (mode !== "videos" && !skipDiscover) await discoverChannels();
+  await refreshChannels();
+  if (mode !== "channels") await collectVideos();
+  console.log(`done (${mode}). estimated quota used: ${quota} units. db: ${DB_PATH}`);
+} finally {
+  db.close();
+}

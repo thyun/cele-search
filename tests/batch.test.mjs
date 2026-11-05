@@ -69,6 +69,13 @@ function installYouTubeMock() {
   globalThis.fetch = async (input) => {
     const url = new URL(input);
     const endpoint = url.pathname.split("/").pop();
+    const mode = process.argv[2];
+    if (mode === "channels" && !["search", "channels"].includes(endpoint)) {
+      throw new Error(`Channel batch must not collect videos: ${endpoint}`);
+    }
+    if (mode === "videos" && !["channels", "playlistItems", "videos"].includes(endpoint)) {
+      throw new Error(`Video batch must not discover channels: ${endpoint}`);
+    }
     if (endpoint === "search") {
       return Response.json({
         items: [
@@ -125,23 +132,31 @@ test("batch persists short videos and updates duration and classification on rer
       INSERT INTO channels VALUES ('blocked', 'MBCNEWS', 1000, 'uploads', '', '', '');
       INSERT INTO videos VALUES ('blocked-video', 'blocked', 'Test', '', '', 300, 10, 0, 0, 0.1, '', 0);
     `);
-    const runBatch = () => execFileSync(process.execPath, [
+    const runBatch = (mode) => execFileSync(process.execPath, [
       "--import",
       `data:text/javascript,${encodeURIComponent(`(${installYouTubeMock.toString()})();`)}`,
       "scripts/batch.mjs",
-      "--pages=1",
+      mode,
+      ...(mode === "channels" ? ["--pages=1"] : []),
     ], {
       cwd: process.cwd(),
       env: { ...process.env, DB_PATH: dbPath, YOUTUBE_API_KEY: "test-only" },
       encoding: "utf8",
     });
 
-    assert.match(runBatch(), /saved 5 videos \(2 Shorts candidates\)/);
+    assert.match(runBatch("channels"), /refreshed/);
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM videos").get().n, 0);
     assert.deepEqual(
       db.prepare("SELECT channel_id FROM channels").all().map((row) => row.channel_id),
       ["channel"],
     );
     assert.equal(db.prepare("SELECT COUNT(*) AS n FROM excluded_channels").get().n, 2);
+    db.exec("UPDATE channels SET subscriber_count = 1, uploads_playlist_id = NULL WHERE channel_id = 'channel'");
+    assert.match(runBatch("videos"), /saved 5 videos \(2 Shorts candidates\)/);
+    const channel = db.prepare("SELECT subscriber_count, uploads_playlist_id FROM channels WHERE channel_id = 'channel'").get();
+    assert.equal(channel.subscriber_count, 2000);
+    assert.equal(channel.uploads_playlist_id, "uploads");
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM channels").get().n, 1);
     assert.deepEqual(
       db.prepare("SELECT duration_seconds, is_short FROM videos ORDER BY duration_seconds").all()
         .map((row) => [row.duration_seconds, row.is_short]),
@@ -150,7 +165,7 @@ test("batch persists short videos and updates duration and classification on rer
     assert.equal(db.prepare("SELECT efficiency_score FROM videos LIMIT 1").get().efficiency_score, 5);
 
     db.exec("UPDATE videos SET duration_seconds = 500, is_short = 0 WHERE video_id = 'video-180'");
-    runBatch();
+    runBatch("videos");
     const refreshed = db.prepare("SELECT duration_seconds, is_short FROM videos WHERE video_id = 'video-180'").get();
     assert.equal(refreshed.duration_seconds, 180);
     assert.equal(refreshed.is_short, 1);

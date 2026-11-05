@@ -12,6 +12,7 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { initializeDatabase } from "./database.mjs";
+import { excludeChannel, isExcludedChannel, removeBroadcasters } from "./broadcasters.mjs";
 
 const API = "https://www.googleapis.com/youtube/v3";
 const DB_PATH = process.env.DB_PATH ?? path.join("data", "cele-search.db");
@@ -19,7 +20,7 @@ const SIX_MONTHS_MS = 1000 * 60 * 60 * 24 * 30 * 6;
 const SHORTS_MAX_SECONDS = 3 * 60;
 const MIN_SUBSCRIBERS = 1000; // floor so tiny/hidden-sub channels don't explode the ratio
 const DEFAULT_KEYWORDS = [
-  "연예인 광고",
+  "연예인 추천템",
   "셀럽 PPL",
   "스타 협찬",
   "연예인 신제품 광고",
@@ -65,6 +66,8 @@ const chunk = (arr, size) =>
 mkdirSync(path.dirname(DB_PATH), { recursive: true });
 const db = new DatabaseSync(DB_PATH);
 initializeDatabase(db);
+const removed = removeBroadcasters(db);
+console.log(`excluded ${removed.channels} broadcaster channels and ${removed.videos} videos`);
 
 const now = new Date().toISOString();
 const cutoff = new Date(Date.now() - SIX_MONTHS_MS).toISOString();
@@ -83,7 +86,8 @@ async function discoverChannels() {
       const data = await call("search", params, 100);
       for (const item of data.items ?? []) {
         const id = item.snippet?.channelId;
-        if (id && !found.has(id)) found.set(id, keyword);
+        const title = item.snippet?.channelTitle ?? "";
+        if (id && !isExcludedChannel(db, id, title) && !found.has(id)) found.set(id, keyword);
       }
       pageToken = data.nextPageToken;
       if (!pageToken) break;
@@ -108,11 +112,17 @@ async function refreshChannels() {
       "channels", { id: batch.join(","), part: "snippet,statistics,contentDetails" }, 1,
     );
     for (const ch of data.items ?? []) {
+      const title = ch.snippet?.title ?? "";
+      if (isExcludedChannel(db, ch.id, title)) {
+        const videos = excludeChannel(db, ch.id, title);
+        console.log(`excluded broadcaster ${title} (${ch.id}), removed ${videos} videos`);
+        continue;
+      }
       const subs = ch.statistics?.hiddenSubscriberCount
         ? null
         : Number(ch.statistics?.subscriberCount ?? 0);
       update.run(
-        ch.snippet?.title ?? "", subs,
+        title, subs,
         ch.contentDetails?.relatedPlaylists?.uploads ?? null, now, ch.id,
       );
     }

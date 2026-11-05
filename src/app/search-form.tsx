@@ -89,10 +89,10 @@ export default function SearchForm({
     <div className="flex min-h-screen flex-col items-center bg-zinc-50 px-4 py-10 dark:bg-black">
       <main className="w-full max-w-5xl">
         <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">
-          연예인 광고 롱폼 컨텐츠 검색
+          연예인 광고 컨텐츠 검색
         </h1>
         <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-          최근 6개월 내 업로드된 4분 이상 롱폼 영상 중, 구독자 수 대비 조회수가
+          최근 6개월 내 수집된 롱폼·쇼츠 영상을 구분 없이, 구독자 수 대비 조회수가
           높은 순으로 20개씩 보여줍니다.
         </p>
 

@@ -1,5 +1,9 @@
 export function initializeDatabase(db) {
   db.exec(`
+    CREATE TABLE IF NOT EXISTS excluded_channels (
+      channel_id TEXT PRIMARY KEY,
+      title TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS channels (
       channel_id TEXT PRIMARY KEY,
       title TEXT NOT NULL,

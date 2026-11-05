@@ -74,7 +74,6 @@ export function searchVideos(userQuery?: string, cursor?: string) {
                 v.like_count, v.comment_count, v.efficiency_score
          FROM videos v JOIN channels c ON c.channel_id = v.channel_id
          WHERE (?1 IS NULL OR v.title LIKE ?1 ESCAPE '\\' OR c.title LIKE ?1 ESCAPE '\\')
-           AND v.duration_seconds >= 240
          ORDER BY v.efficiency_score DESC, v.view_count DESC
          LIMIT ?2`,
       )

@@ -23,7 +23,7 @@ test("broadcaster exclusion removes related videos and remembers excluded IDs", 
     db.exec(`
       INSERT INTO channels VALUES ('blocked', '채널A WORLD', 1000, 'uploads', '', '', '');
       INSERT INTO channels VALUES ('keep', 'Test', 1000, 'uploads', '', '', '');
-      INSERT INTO videos VALUES ('v', 'blocked', 'Test', '', '', 300, 10, 0, 0, 0.1, '', 0);
+      INSERT INTO videos VALUES ('v', 'blocked', 'Test', '', '', 300, 10, 0, 0, 0.1, '', '', 0);
     `);
     assert.deepEqual(removeBroadcasters(db), { channels: 1, videos: 1 });
     assert.deepEqual(removeBroadcasters(db), { channels: 0, videos: 0 });
@@ -44,7 +44,7 @@ test("database migration backfills Shorts candidates and can run repeatedly", ()
       INSERT INTO channels VALUES ('channel', 'Test', 1000, 'uploads', '', '', '');
     `);
     const insert = db.prepare(`
-      INSERT INTO videos VALUES (?, 'channel', 'Test', '', '', ?, 100, 0, 0, 0.1, '')
+      INSERT INTO videos VALUES (?, 'channel', 'Test', '', '', ?, 100, 0, 0, 0.1, '', '')
     `);
     for (const duration of [0, 1, 180, 181, 240]) {
       insert.run(`video-${duration}`, duration);
@@ -130,7 +130,7 @@ test("batch persists short videos and updates duration and classification on rer
     db.exec("INSERT INTO channels VALUES ('channel', 'Test', 2000, 'uploads', '', '', '')");
     db.exec(`
       INSERT INTO channels VALUES ('blocked', 'MBCNEWS', 1000, 'uploads', '', '', '');
-      INSERT INTO videos VALUES ('blocked-video', 'blocked', 'Test', '', '', 300, 10, 0, 0, 0.1, '', 0);
+      INSERT INTO videos VALUES ('blocked-video', 'blocked', 'Test', '', '', 300, 10, 0, 0, 0.1, '', '', 0);
     `);
     const runBatch = (mode) => execFileSync(process.execPath, [
       "--import",

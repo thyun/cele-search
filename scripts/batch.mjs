@@ -165,13 +165,14 @@ async function collectVideos() {
 
   const upsert = db.prepare(
     `INSERT INTO videos (video_id, channel_id, title, published_at, thumbnail_url, duration_seconds,
-       view_count, like_count, comment_count, efficiency_score, updated_at, is_short)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      view_count, like_count, comment_count, efficiency_score, created_at, updated_at, is_short)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(video_id) DO UPDATE SET
        title = excluded.title, thumbnail_url = excluded.thumbnail_url,
        view_count = excluded.view_count, like_count = excluded.like_count,
        comment_count = excluded.comment_count, efficiency_score = excluded.efficiency_score,
        duration_seconds = excluded.duration_seconds, is_short = excluded.is_short,
+       created_at = COALESCE(videos.created_at, excluded.created_at),
        updated_at = excluded.updated_at`,
   );
   let saved = 0;
@@ -191,7 +192,7 @@ async function collectVideos() {
         v.id, v.snippet.channelId, v.snippet.title, v.snippet.publishedAt,
         v.snippet.thumbnails?.medium?.url ?? v.snippet.thumbnails?.default?.url ?? "",
         duration, views, Number(v.statistics?.likeCount ?? 0),
-        Number(v.statistics?.commentCount ?? 0), views / subs, now, isShort,
+        Number(v.statistics?.commentCount ?? 0), views / subs, now, now, isShort,
       );
       saved++;
       shorts += isShort;

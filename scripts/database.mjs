@@ -24,13 +24,25 @@ export function initializeDatabase(db) {
       like_count INTEGER NOT NULL,
       comment_count INTEGER NOT NULL,
       efficiency_score REAL NOT NULL,
+      created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       is_short INTEGER NOT NULL DEFAULT 0 CHECK (is_short IN (0, 1))
     );
     CREATE INDEX IF NOT EXISTS idx_videos_score ON videos(efficiency_score DESC);
   `);
 
-  if (!db.prepare("PRAGMA table_info(videos)").all().some((column) => column.name === "is_short")) {
+  const videoColumns = db.prepare("PRAGMA table_info(videos)").all();
+
+  if (!videoColumns.some((column) => column.name === "created_at")) {
+    db.exec(`
+      BEGIN;
+      ALTER TABLE videos ADD COLUMN created_at TEXT;
+      UPDATE videos SET created_at = updated_at WHERE created_at IS NULL;
+      COMMIT;
+    `);
+  }
+
+  if (!videoColumns.some((column) => column.name === "is_short")) {
     db.exec(`
       BEGIN;
       ALTER TABLE videos ADD COLUMN is_short INTEGER NOT NULL DEFAULT 0 CHECK (is_short IN (0, 1));

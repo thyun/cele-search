@@ -26,11 +26,11 @@ test("searchVideos ranks by efficiency, filters by query, and pages with a curso
 
     const db = new DatabaseSync(process.env.DB_PATH);
     db.exec(`
-      CREATE TABLE channels (channel_id TEXT PRIMARY KEY, title TEXT, subscriber_count INTEGER);
+      CREATE TABLE channels (channel_id TEXT PRIMARY KEY, title TEXT, subscriber_count INTEGER, is_approved INTEGER NOT NULL DEFAULT 1);
       CREATE TABLE videos (video_id TEXT PRIMARY KEY, channel_id TEXT, title TEXT, published_at TEXT,
         thumbnail_url TEXT, duration_seconds INTEGER, view_count INTEGER, like_count INTEGER,
         comment_count INTEGER, efficiency_score REAL);
-      INSERT INTO channels VALUES ('C1', '작은채널', 2000), ('C2', '큰채널', NULL);
+      INSERT INTO channels (channel_id, title, subscriber_count, is_approved) VALUES ('C1', '작은채널', 2000, 1), ('C2', '큰채널', NULL, 1);
     `);
     const insert = db.prepare("INSERT INTO videos VALUES (?, ?, ?, ?, NULL, 300, 10, 1, 1, ?)");
     for (let i = 0; i < 25; i++) insert.run(`v${i}`, "C1", `영상 ${i}`, "2026-01-01", i);

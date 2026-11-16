@@ -21,8 +21,9 @@ test("broadcaster exclusion removes related videos and remembers excluded IDs", 
       assert.equal(isBroadcaster(title), false, title);
     }
     db.exec(`
-      INSERT INTO channels VALUES ('blocked', '채널A WORLD', 1000, 'uploads', '', '', '');
-      INSERT INTO channels VALUES ('keep', 'Test', 1000, 'uploads', '', '', '');
+      INSERT INTO channels (channel_id, title, subscriber_count, uploads_playlist_id, discovered_keyword, discovered_at, updated_at, is_approved)
+      VALUES ('blocked', '채널A WORLD', 1000, 'uploads', '', '', '', 1),
+             ('keep', 'Test', 1000, 'uploads', '', '', '', 1);
       INSERT INTO videos VALUES ('v', 'blocked', 'Test', '', '', 300, 10, 0, 0, 0.1, '', '', 0);
     `);
     assert.deepEqual(removeBroadcasters(db), { channels: 1, videos: 1 });
@@ -41,7 +42,8 @@ test("database migration backfills Shorts candidates and can run repeatedly", ()
     initializeDatabase(db);
     db.exec(`
       ALTER TABLE videos DROP COLUMN is_short;
-      INSERT INTO channels VALUES ('channel', 'Test', 1000, 'uploads', '', '', '');
+      INSERT INTO channels (channel_id, title, subscriber_count, uploads_playlist_id, discovered_keyword, discovered_at, updated_at, is_approved)
+      VALUES ('channel', 'Test', 1000, 'uploads', '', '', '', 1);
     `);
     const insert = db.prepare(`
       INSERT INTO videos VALUES (?, 'channel', 'Test', '', '', ?, 100, 0, 0, 0.1, '', '')
@@ -127,9 +129,10 @@ test("batch persists short videos and updates duration and classification on rer
   const db = new DatabaseSync(dbPath);
   try {
     initializeDatabase(db);
-    db.exec("INSERT INTO channels VALUES ('channel', 'Test', 2000, 'uploads', '', '', '')");
+    db.exec("INSERT INTO channels (channel_id, title, subscriber_count, uploads_playlist_id, discovered_keyword, discovered_at, updated_at, is_approved) VALUES ('channel', 'Test', 2000, 'uploads', '', '', '', 1)");
     db.exec(`
-      INSERT INTO channels VALUES ('blocked', 'MBCNEWS', 1000, 'uploads', '', '', '');
+      INSERT INTO channels (channel_id, title, subscriber_count, uploads_playlist_id, discovered_keyword, discovered_at, updated_at, is_approved)
+      VALUES ('blocked', 'MBCNEWS', 1000, 'uploads', '', '', '', 1);
       INSERT INTO videos VALUES ('blocked-video', 'blocked', 'Test', '', '', 300, 10, 0, 0, 0.1, '', '', 0);
     `);
     const runBatch = (mode) => execFileSync(process.execPath, [
@@ -151,6 +154,7 @@ test("batch persists short videos and updates duration and classification on rer
       ["channel"],
     );
     assert.equal(db.prepare("SELECT COUNT(*) AS n FROM excluded_channels").get().n, 2);
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM channels WHERE is_approved = 1").get().n, 1);
     db.exec("UPDATE channels SET subscriber_count = 1, uploads_playlist_id = NULL WHERE channel_id = 'channel'");
     assert.match(runBatch("videos"), /saved 5 videos \(2 Shorts candidates\)/);
     const channel = db.prepare("SELECT subscriber_count, uploads_playlist_id FROM channels WHERE channel_id = 'channel'").get();

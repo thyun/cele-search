@@ -83,7 +83,8 @@ async function main() {
   console.log(`excluded ${removed.channels} broadcaster channels and ${removed.videos} videos`);
 
   const now = toMysqlDateTime(new Date());
-  const cutoff = toMysqlDateTime(new Date(Date.now() - SIX_MONTHS_MS));
+  const cutoffIso = new Date(Date.now() - SIX_MONTHS_MS).toISOString();
+  const cutoffSql = toMysqlDateTime(new Date(Date.now() - SIX_MONTHS_MS));
 
   async function discoverChannels() {
     const keywords = [...extraKeywords.map((k) => `${k} 광고`), ...DEFAULT_KEYWORDS];
@@ -93,14 +94,14 @@ async function main() {
       for (let i = 0; i < pages; i++) {
         const params = {
           q: keyword, part: "snippet", type: "video", order: "viewCount",
-          publishedAfter: cutoff, maxResults: "50", relevanceLanguage: "ko",
+          publishedAfter: cutoffIso, maxResults: "50", relevanceLanguage: "ko",
         };
         if (pageToken) params.pageToken = pageToken;
         const data = await call("search", params, 100);
         for (const item of data.items ?? []) {
           const id = item.snippet?.channelId;
           const title = item.snippet?.channelTitle ?? "";
-          if (id && !isExcludedChannel(db, id, title) && !found.has(id)) found.set(id, keyword);
+          if (id && !(await isExcludedChannel(db, id, title)) && !found.has(id)) found.set(id, keyword);
         }
         pageToken = data.nextPageToken;
         if (!pageToken) break;
@@ -109,8 +110,8 @@ async function main() {
     }
 
     const insertSql = isMysqlEnabled()
-      ? `INSERT IGNORE INTO channels (channel_id, title, discovered_keyword, discovered_at, updated_at) VALUES (?, '', ?, ?, ?)`
-      : `INSERT INTO channels (channel_id, title, discovered_keyword, discovered_at, updated_at) VALUES (?, '', ?, ?, ?) ON CONFLICT(channel_id) DO NOTHING`;
+      ? `INSERT IGNORE INTO channels (channel_id, title, discovered_keyword, discovered_at, updated_at, is_approved) VALUES (?, '', ?, ?, ?, 0)`
+      : `INSERT INTO channels (channel_id, title, discovered_keyword, discovered_at, updated_at, is_approved) VALUES (?, '', ?, ?, ?, 0) ON CONFLICT(channel_id) DO NOTHING`;
     const insert = db.prepare(insertSql);
     for (const [id, keyword] of found) await insert.run(id, keyword, now, now);
   }
@@ -127,7 +128,7 @@ async function main() {
       );
       for (const ch of data.items ?? []) {
         const title = ch.snippet?.title ?? "";
-        if (isExcludedChannel(db, ch.id, title)) {
+        if (await isExcludedChannel(db, ch.id, title)) {
           const videos = await excludeChannel(db, ch.id, title);
           console.log(`excluded broadcaster ${title} (${ch.id}), removed ${videos} videos`);
           continue;
@@ -146,7 +147,7 @@ async function main() {
 
   async function collectVideos() {
     const channels = await db
-      .prepare("SELECT channel_id, subscriber_count, uploads_playlist_id FROM channels WHERE uploads_playlist_id IS NOT NULL")
+      .prepare("SELECT channel_id, subscriber_count, uploads_playlist_id FROM channels WHERE uploads_playlist_id IS NOT NULL AND is_approved = 1")
       .all();
     const subsByChannel = new Map(channels.map((c) => [c.channel_id, c.subscriber_count]));
 
@@ -160,7 +161,7 @@ async function main() {
         );
         for (const item of data.items ?? []) {
           const published = item.contentDetails?.videoPublishedAt;
-          if (published && published >= cutoff) videoIds.push(item.contentDetails.videoId);
+          if (published && published >= cutoffIso) videoIds.push(item.contentDetails.videoId);
         }
       } catch (error) {
         console.warn(`skip channel ${ch.channel_id}: ${error.message}`);
@@ -212,7 +213,7 @@ async function main() {
         shorts += isShort;
       }
     }
-    const pruned = await db.prepare("DELETE FROM videos WHERE published_at < ?").run(cutoff);
+    const pruned = await db.prepare("DELETE FROM videos WHERE published_at < ?").run(cutoffSql);
     console.log(`saved ${saved} videos (${shorts} Shorts candidates), pruned ${pruned.changes} old ones`);
   }
 

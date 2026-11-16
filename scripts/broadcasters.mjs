@@ -10,12 +10,42 @@ export function isBroadcaster(title) {
 }
 
 export function isExcludedChannel(db, channelId, title) {
-  return isBroadcaster(title) ||
-    Boolean(db.prepare("SELECT 1 FROM excluded_channels WHERE channel_id = ?").get(channelId));
+  if (isBroadcaster(title)) return true;
+  const result = db.prepare("SELECT 1 FROM excluded_channels WHERE channel_id = ?").get(channelId);
+  if (result && typeof result.then === "function") {
+    return result.then(Boolean);
+  }
+  return Boolean(result);
 }
 
 export function excludeChannel(db, channelId, title) {
-  db.exec("BEGIN");
+  const begin = db.exec("BEGIN");
+  if (begin && typeof begin.then === "function") {
+    return begin.then(async () => {
+      try {
+        if (isMysqlEnabled()) {
+          await db.prepare(`
+            INSERT INTO excluded_channels (channel_id, title)
+            VALUES (?, ?)
+            ON DUPLICATE KEY UPDATE title = VALUES(title)
+          `).run(channelId, title);
+        } else {
+          await db.prepare(`
+            INSERT INTO excluded_channels (channel_id, title) VALUES (?, ?)
+            ON CONFLICT(channel_id) DO UPDATE SET title = excluded.title
+          `).run(channelId, title);
+        }
+        const videos = await db.prepare("DELETE FROM videos WHERE channel_id = ?").run(channelId);
+        await db.prepare("DELETE FROM channels WHERE channel_id = ?").run(channelId);
+        await db.exec("COMMIT");
+        return Number(videos.changes ?? 0);
+      } catch (error) {
+        await db.exec("ROLLBACK");
+        throw error;
+      }
+    });
+  }
+
   try {
     if (isMysqlEnabled()) {
       db.prepare(`
@@ -40,9 +70,24 @@ export function excludeChannel(db, channelId, title) {
 }
 
 export function removeBroadcasters(db) {
+  const rows = db.prepare("SELECT channel_id, title FROM channels").all();
+  if (rows && typeof rows.then === "function") {
+    return rows.then(async (items) => {
+      let channels = 0;
+      let videos = 0;
+      for (const channel of items) {
+        if (await isExcludedChannel(db, channel.channel_id, channel.title)) {
+          videos += await excludeChannel(db, channel.channel_id, channel.title);
+          channels++;
+        }
+      }
+      return { channels, videos };
+    });
+  }
+
   let channels = 0;
   let videos = 0;
-  for (const channel of db.prepare("SELECT channel_id, title FROM channels").all()) {
+  for (const channel of rows) {
     if (isExcludedChannel(db, channel.channel_id, channel.title)) {
       videos += excludeChannel(db, channel.channel_id, channel.title);
       channels++;

@@ -110,7 +110,8 @@ function sqliteInitializeDatabase(db) {
       uploads_playlist_id TEXT,
       discovered_keyword TEXT,
       discovered_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
+      updated_at TEXT NOT NULL,
+      is_approved INTEGER NOT NULL DEFAULT 0 CHECK (is_approved IN (0, 1))
     );
     CREATE TABLE IF NOT EXISTS videos (
       video_id TEXT PRIMARY KEY,
@@ -131,6 +132,17 @@ function sqliteInitializeDatabase(db) {
   `);
 
   const videoColumns = db.prepare("PRAGMA table_info(videos)").all();
+
+  const channelColumns = db.prepare("PRAGMA table_info(channels)").all();
+
+  if (!channelColumns.some((column) => column.name === "is_approved")) {
+    db.exec(`
+      BEGIN;
+      ALTER TABLE channels ADD COLUMN is_approved INTEGER NOT NULL DEFAULT 0 CHECK (is_approved IN (0, 1));
+      UPDATE channels SET is_approved = 1 WHERE is_approved IS NULL;
+      COMMIT;
+    `);
+  }
 
   if (!videoColumns.some((column) => column.name === "created_at")) {
     db.exec(`
@@ -165,7 +177,8 @@ async function mysqlInitializeDatabase(connection) {
       uploads_playlist_id VARCHAR(255) NULL,
       discovered_keyword VARCHAR(255) NULL,
       discovered_at DATETIME(3) NOT NULL,
-      updated_at DATETIME(3) NOT NULL
+      updated_at DATETIME(3) NOT NULL,
+      is_approved TINYINT NOT NULL DEFAULT 0
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
     CREATE TABLE IF NOT EXISTS videos (
@@ -193,6 +206,14 @@ async function mysqlInitializeDatabase(connection) {
   if (existingIndex.length === 0) {
     await connection.query("CREATE INDEX idx_videos_score ON videos (efficiency_score DESC)");
   }
+
+  const [channelColumns] = await connection.query(
+    "SELECT COLUMN_NAME AS name FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'channels'",
+  );
+  if (!channelColumns.some((column) => column.name === "is_approved")) {
+    await connection.query("ALTER TABLE channels ADD COLUMN is_approved TINYINT NOT NULL DEFAULT 0");
+  }
+  await connection.query("UPDATE channels SET is_approved = 1 WHERE is_approved IS NULL");
 
   const [videoColumns] = await connection.query(
     "SELECT COLUMN_NAME AS name FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'videos'",

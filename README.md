@@ -5,7 +5,7 @@
 
 ## 주요 기능
 
-- 채널 배치(`npm run batch:channels`)가 YouTube API로 채널을 발굴하고 정보를 갱신해 SQLite(`data/cele-search.db`)에 저장
+- 채널 배치(`npm run batch:channels`)가 YouTube API로 채널을 발굴하고 정보를 MySQL(`MYSQL_DATABASE`)에 저장
 - 영상 배치(`npm run batch:videos`)는 기존 채널 정보를 갱신한 뒤 영상을 수집 (새 채널 검색 없음)
 - 채널별 최근 영상 최대 30개 중 6개월 이내 영상을 쇼츠 후보까지 함께 수집
 - DB의 `videos.is_short`는 1초~3분 영상을 `1`, 나머지는 `0`으로 저장 (길이 기반 추정이며 실제 쇼츠 여부를 보장하지 않음)
@@ -32,6 +32,12 @@ npm install
 ```bash
 # .env
 YOUTUBE_API_KEY=발급받은_API_키
+DB_DRIVER=mysql
+MYSQL_HOST=127.0.0.1
+MYSQL_PORT=3306
+MYSQL_USER=root
+MYSQL_PASSWORD=
+MYSQL_DATABASE=cele_search
 ```
 
 `.env.example` 파일을 참고해 새 환경에서도 동일하게 설정할 수 있습니다.
@@ -51,7 +57,7 @@ npm run batch                                     # 기존 호환: 채널 배치
 영상 배치도 기존 채널의 구독자 수·uploads ID를 먼저 갱신하므로 최신 구독자 수로 영상 점수를 계산합니다.
 채널 배치 쿼터: `search.list` 100 units/회(기본 약 1,000 units) + `channels.list` 50개당 1 unit.
 영상 배치 쿼터: `channels.list` 50개당 1 unit + 채널당 `playlistItems.list` 1 unit + `videos.list` 50개당 1 unit (`search.list` 호출 없음).
-`DB_PATH` 환경변수로 DB 위치를 바꿀 수 있습니다.
+로컬 MySQL은 `MYSQL_*` 환경변수로 연결하고, 기본 DB는 `cele_search`를 사용합니다. `DB_PATH`는 SQLite 폴백용으로만 사용됩니다.
 기존 DB는 배치 실행 시 `is_short` 필드를 자동으로 추가하고 기존 영상의 길이를 기준으로 값을 채웁니다.
 이전에 제외됐던 짧은 영상은 다음 배치에서 채널별 최근 영상 조회 범위에 포함되면 저장됩니다.
 방송사 제외는 채널명 규칙과 제외 ID에 기반합니다. 방송사 이름이 없는 별도 브랜드 채널은 누락될 수 있으며,
@@ -73,7 +79,7 @@ npm run dev
 - `src/app/api/search/route.ts` — 검색 API 라우트
 - `src/app/page.tsx` — 일반 폼 제출의 서버 검색 및 결과 렌더링
 - `src/app/search-form.tsx` — 검색 UI 및 결과 화면
-- `data/cele-search.db` — SQLite DB (git에 커밋되지 않음)
+- MySQL `cele_search` — 기본 실행 DB; 로컬 루트 계정으로 생성
 
 ## YouTube API 할당량
 

@@ -12,7 +12,7 @@ export default async function Home({ searchParams }: PageProps<"/">) {
   let data = null;
   let error = null;
   try {
-    data = searchVideos(query, cursor);
+    data = await searchVideos(query, cursor);
   } catch (cause) {
     error = cause instanceof Error ? cause.message : "검색에 실패했습니다.";
   }

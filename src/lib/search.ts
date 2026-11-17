@@ -115,6 +115,8 @@ export function searchVideos(userQuery?: string, cursor?: string) {
   const query = userQuery?.trim() || null;
   const limit = offset + PAGE_SIZE;
 
+  const likeEscape = isMysqlEnabled() ? "ESCAPE '\\\\'" : "ESCAPE '\\'";
+
   if (isMysqlEnabled()) {
     return (async () => {
       let db;
@@ -128,10 +130,10 @@ export function searchVideos(userQuery?: string, cursor?: string) {
         const rows = (await db
           .prepare(
             `SELECT v.video_id, v.title, c.title AS channel_title, c.subscriber_count,
-                    v.published_at, v.thumbnail_url, v.duration_seconds, v.view_count,
-                    v.like_count, v.comment_count, v.efficiency_score
+                   v.published_at, v.thumbnail_url, v.duration_seconds, v.view_count,
+                   v.like_count, v.comment_count, v.efficiency_score
              FROM videos v JOIN channels c ON c.channel_id = v.channel_id
-             WHERE (? IS NULL OR v.title LIKE ? ESCAPE '\\' OR c.title LIKE ? ESCAPE '\\')
+             WHERE (? IS NULL OR v.title LIKE ? ${likeEscape} OR c.title LIKE ? ${likeEscape})
              ORDER BY v.efficiency_score DESC, v.view_count DESC
              LIMIT ?`,
           )
@@ -176,7 +178,7 @@ export function searchVideos(userQuery?: string, cursor?: string) {
                 v.published_at, v.thumbnail_url, v.duration_seconds, v.view_count,
                 v.like_count, v.comment_count, v.efficiency_score
          FROM videos v JOIN channels c ON c.channel_id = v.channel_id
-         WHERE (? IS NULL OR v.title LIKE ? ESCAPE '\\' OR c.title LIKE ? ESCAPE '\\')
+         WHERE (? IS NULL OR v.title LIKE ? ${likeEscape} OR c.title LIKE ? ${likeEscape})
          ORDER BY v.efficiency_score DESC, v.view_count DESC
          LIMIT ?`,
       )

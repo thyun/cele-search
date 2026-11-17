@@ -25,7 +25,9 @@ function formatNumber(n: number): string {
 }
 
 function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("ko-KR");
+  return new Date(iso).toLocaleDateString("ko-KR", {
+    timeZone: "Asia/Seoul",
+  });
 }
 
 interface SearchFormProps {

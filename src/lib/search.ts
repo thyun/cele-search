@@ -105,7 +105,20 @@ interface VideoRow {
  * The cursor is the number of results already shown, so each call returns
  * every result up to the next page.
  */
-export function searchVideos(userQuery?: string, cursor?: string) {
+export interface SearchFilters {
+  viewCountMin?: number;
+  viewCountMax?: number;
+  dateFrom?: string;
+  dateTo?: string;
+}
+
+export class InvalidSearchFiltersError extends Error {
+  constructor(message = "검색 조건이 올바르지 않습니다.") {
+    super(message);
+  }
+}
+
+export function searchVideos(userQuery?: string, cursor?: string, filters: SearchFilters = {}) {
   let offset = 0;
   if (cursor !== undefined) {
     if (!/^\d{1,6}$/.test(cursor)) throw new InvalidSearchCursorError();
@@ -114,6 +127,21 @@ export function searchVideos(userQuery?: string, cursor?: string) {
 
   const query = userQuery?.trim() || null;
   const limit = offset + PAGE_SIZE;
+
+  const viewCountMin = filters.viewCountMin ?? 300_000;
+  const viewCountMax = filters.viewCountMax ?? 1_000_000;
+  const dateFrom = filters.dateFrom ?? null;
+  const dateTo = filters.dateTo ?? null;
+
+  if (!Number.isInteger(viewCountMin) || !Number.isInteger(viewCountMax) || viewCountMin < 0 || viewCountMax < viewCountMin) {
+    throw new InvalidSearchFiltersError("조회수 시작값은 종료값보다 작거나 같아야 합니다.");
+  }
+  if ((dateFrom && !/^\d{4}-\d{2}-\d{2}$/.test(dateFrom)) || (dateTo && !/^\d{4}-\d{2}-\d{2}$/.test(dateTo))) {
+    throw new InvalidSearchFiltersError("시작일과 종료일을 올바르게 입력해주세요.");
+  }
+  if (dateFrom && dateTo && dateFrom > dateTo) {
+    throw new InvalidSearchFiltersError("시작일은 종료일보다 이전이어야 합니다.");
+  }
 
   const likeEscape = isMysqlEnabled() ? "ESCAPE '\\\\'" : "ESCAPE '\\'";
 
@@ -134,10 +162,13 @@ export function searchVideos(userQuery?: string, cursor?: string) {
                    v.like_count, v.comment_count, v.efficiency_score
              FROM videos v JOIN channels c ON c.channel_id = v.channel_id
              WHERE (? IS NULL OR v.title LIKE ? ${likeEscape} OR c.title LIKE ? ${likeEscape})
+               AND v.view_count >= ? AND v.view_count <= ?
+               AND (? IS NULL OR v.published_at >= ?)
+               AND (? IS NULL OR v.published_at < DATE_ADD(STR_TO_DATE(?, '%Y-%m-%d'), INTERVAL 1 DAY))
              ORDER BY v.efficiency_score DESC, v.view_count DESC
              LIMIT ?`,
           )
-          .all(like, like, like, limit + 1)) as VideoRow[];
+          .all(like, like, like, viewCountMin, viewCountMax, dateFrom, dateFrom, dateTo, dateTo, limit + 1)) as VideoRow[];
 
         const results: VideoResult[] = rows.slice(0, limit).map((row) => ({
           videoId: row.video_id,
@@ -179,10 +210,13 @@ export function searchVideos(userQuery?: string, cursor?: string) {
                 v.like_count, v.comment_count, v.efficiency_score
          FROM videos v JOIN channels c ON c.channel_id = v.channel_id
          WHERE (? IS NULL OR v.title LIKE ? ${likeEscape} OR c.title LIKE ? ${likeEscape})
+           AND v.view_count >= ? AND v.view_count <= ?
+           AND (? IS NULL OR v.published_at >= ?)
+           AND (? IS NULL OR v.published_at < date(?, '+1 day'))
          ORDER BY v.efficiency_score DESC, v.view_count DESC
          LIMIT ?`,
       )
-      .all(like, like, like, limit + 1) as unknown as VideoRow[];
+      .all(like, like, like, viewCountMin, viewCountMax, dateFrom, dateFrom, dateTo, dateTo, limit + 1) as unknown as VideoRow[];
 
     const results: VideoResult[] = rows.slice(0, limit).map((row) => ({
       videoId: row.video_id,

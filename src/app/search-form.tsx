@@ -41,7 +41,19 @@ export default function SearchForm({
   initialData = null,
   initialError = null,
 }: SearchFormProps) {
+  const today = new Date();
+  const sixMonthsAgo = new Date(today);
+  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+  const toDateInput = (date: Date) => {
+    const kst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+    return kst.toISOString().slice(0, 10);
+  };
+
   const [query, setQuery] = useState(initialQuery);
+  const [viewCountMin, setViewCountMin] = useState("30");
+  const [viewCountMax, setViewCountMax] = useState("100");
+  const [dateFrom, setDateFrom] = useState(toDateInput(sixMonthsAgo));
+  const [dateTo, setDateTo] = useState(toDateInput(today));
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(initialError);
@@ -54,6 +66,10 @@ export default function SearchForm({
     try {
       const params = new URLSearchParams();
       if (query.trim()) params.set("q", query.trim());
+      params.set("viewCountMin", viewCountMin);
+      params.set("viewCountMax", viewCountMax);
+      params.set("dateFrom", dateFrom);
+      params.set("dateTo", dateTo);
       const res = await fetch(`/api/search?${params.toString()}`);
       const json: SearchResponse = await res.json();
       if (!res.ok) {
@@ -76,6 +92,10 @@ export default function SearchForm({
     try {
       const params = new URLSearchParams({ cursor: data.nextCursor });
       if (data.query) params.set("q", data.query);
+      params.set("viewCountMin", viewCountMin);
+      params.set("viewCountMax", viewCountMax);
+      params.set("dateFrom", dateFrom);
+      params.set("dateTo", dateTo);
       const res = await fetch(`/api/search?${params}`);
       const json: SearchResponse = await res.json();
       if (!res.ok) throw new Error(json.error ?? "추가 검색에 실패했습니다.");
@@ -98,17 +118,33 @@ export default function SearchForm({
           높은 순으로 20개씩 보여줍니다.
         </p>
 
-        <form action="/" method="get" onSubmit={handleSearch} className="mt-6 flex gap-2">
+        <form action="/" method="get" onSubmit={handleSearch} className="mt-6 space-y-3">
           <input type="hidden" name="search" value="1" />
-          <input
-            type="text"
-            name="q"
-            aria-label="연예인 이름 또는 상품명 (선택 입력)"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="연예인 이름 또는 상품명 (선택 입력)"
-            className="flex-1 rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
-          />
+          <div className="flex gap-2">
+            <input
+              type="text"
+              name="q"
+              aria-label="연예인 이름 또는 상품명 (선택 입력)"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="연예인 이름 또는 상품명 (선택 입력)"
+              className="flex-1 rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+            />
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <label className="text-xs text-zinc-600 dark:text-zinc-400">조회수 시작 (만)
+              <input type="number" name="viewCountMin" min="0" value={viewCountMin} onChange={(e) => setViewCountMin(e.target.value)} className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50" />
+            </label>
+            <label className="text-xs text-zinc-600 dark:text-zinc-400">조회수 종료 (만)
+              <input type="number" name="viewCountMax" min="0" value={viewCountMax} onChange={(e) => setViewCountMax(e.target.value)} className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50" />
+            </label>
+            <label className="text-xs text-zinc-600 dark:text-zinc-400">시작일
+              <input type="date" name="dateFrom" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50" />
+            </label>
+            <label className="text-xs text-zinc-600 dark:text-zinc-400">종료일
+              <input type="date" name="dateTo" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50" />
+            </label>
+          </div>
           <button
             type="submit"
             disabled={loading || loadingMore}

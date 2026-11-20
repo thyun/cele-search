@@ -42,7 +42,7 @@ test("searchVideos ranks by efficiency, filters by query, and pages with a curso
     }
     db.close();
 
-    const first = searchVideos();
+    const first = searchVideos("", undefined, { viewCountMin: 0, viewCountMax: Number.MAX_SAFE_INTEGER, dateFrom: undefined, dateTo: undefined });
     assert.equal(first.results.length, 20);
     assert.equal(first.results[0].videoId, "duration-240");
     assert.equal(first.results[5].videoId, "pct");
@@ -50,7 +50,7 @@ test("searchVideos ranks by efficiency, filters by query, and pages with a curso
     assert.equal(first.results[6].videoId, "v24");
     assert.equal(first.nextCursor, "20");
 
-    const second = searchVideos("", first.nextCursor);
+    const second = searchVideos("", first.nextCursor, { viewCountMin: 0, viewCountMax: Number.MAX_SAFE_INTEGER, dateFrom: undefined, dateTo: undefined });
     assert.equal(second.results.length, 31);
     assert.deepEqual(
       second.results.filter((v) => v.videoId.startsWith("duration-")).map((v) => v.videoId),
@@ -58,13 +58,14 @@ test("searchVideos ranks by efficiency, filters by query, and pages with a curso
     );
     assert.equal(second.nextCursor, null);
     assert.deepEqual(
-      searchVideos("김유정").results.map((v) => v.durationSeconds),
+      searchVideos("김유정", undefined, { viewCountMin: 0, viewCountMax: Number.MAX_SAFE_INTEGER }).results.map((v) => v.durationSeconds),
       [240, 239, 181, 180, 60],
     );
 
-    assert.deepEqual(searchVideos("100%").results.map((v) => v.videoId), ["pct"]);
-    assert.equal(searchVideos("작은채널").results.length, 20);
-    assert.equal(searchVideos("없는검색어").results.length, 0);
+    assert.deepEqual(searchVideos("100%", undefined, { viewCountMin: 0, viewCountMax: Number.MAX_SAFE_INTEGER }).results.map((v) => v.videoId), ["pct"]);
+    const noViewRange = { viewCountMin: 0, viewCountMax: Number.MAX_SAFE_INTEGER };
+    assert.equal(searchVideos("작은채널", undefined, noViewRange).results.length, 20);
+    assert.equal(searchVideos("없는검색어", undefined, noViewRange).results.length, 0);
     assert.throws(() => searchVideos("", "../x"), InvalidSearchCursorError);
   } finally {
     if (originalDbPath === undefined) delete process.env.DB_PATH;

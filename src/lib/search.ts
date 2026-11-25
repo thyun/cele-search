@@ -74,6 +74,24 @@ export interface VideoResult {
   url: string;
 }
 
+export interface ChannelListItem {
+  channelId: string;
+  title: string;
+  subscriberCount: number | null;
+  discoveredKeyword: string | null;
+  discoveredAt: string;
+  updatedAt: string;
+  isApproved: boolean;
+}
+
+export interface ChannelListResult {
+  channels: ChannelListItem[];
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+}
+
 export class InvalidSearchCursorError extends Error {
   constructor() {
     super("잘못된 더보기 요청입니다. 다시 검색해주세요.");
@@ -115,6 +133,82 @@ export interface SearchFilters {
 export class InvalidSearchFiltersError extends Error {
   constructor(message = "검색 조건이 올바르지 않습니다.") {
     super(message);
+  }
+}
+
+export async function listChannels(page = 1, pageSize = 20, status: "all" | "pending" | "approved" = "all", query = "") {
+  const safePage = Number.isInteger(page) && page > 0 ? page : 1;
+  const safePageSize = Number.isInteger(pageSize) && pageSize > 0 && pageSize <= 100 ? pageSize : 20;
+  const search = query.trim();
+  let db;
+  try {
+    db = await openDatabase({ readOnly: false });
+  } catch {
+    throw new SearchDatabaseMissingError();
+  }
+
+  try {
+    const where = isMysqlEnabled()
+      ? `WHERE (? = 'all' OR (? = 'pending' AND is_approved = 0) OR (? = 'approved' AND is_approved = 1))
+         AND (? = '' OR title LIKE ? ESCAPE '\\\\')`
+      : `WHERE (? = 'all' OR (? = 'pending' AND is_approved = 0) OR (? = 'approved' AND is_approved = 1))
+         AND (? = '' OR title LIKE ? ESCAPE '\\')`;
+    const like = search ? `%${search.replace(/[\\%_]/g, "\\$&")}%` : "";
+    const countRow = await db.prepare(`SELECT COUNT(*) AS total FROM channels ${where}`).get(status, status, status, search, like);
+    const total = Number(countRow?.total ?? 0);
+    const totalPages = Math.ceil(total / safePageSize);
+    const currentPage = totalPages > 0 ? Math.min(safePage, totalPages) : 1;
+    const offset = (currentPage - 1) * safePageSize;
+    const rows = await db.prepare(`
+      SELECT channel_id, title, subscriber_count, discovered_keyword, discovered_at, updated_at, is_approved
+      FROM channels
+      ${where}
+      ORDER BY is_approved ASC, updated_at DESC, title ASC
+      LIMIT ? OFFSET ?
+    `).all(status, status, status, search, like, safePageSize, offset) as Array<{
+      channel_id: string;
+      title: string;
+      subscriber_count: number | null;
+      discovered_keyword: string | null;
+      discovered_at: string;
+      updated_at: string;
+      is_approved: number;
+    }>;
+
+    return {
+      channels: rows.map((row) => ({
+        channelId: row.channel_id,
+        title: row.title,
+        subscriberCount: row.subscriber_count,
+        discoveredKeyword: row.discovered_keyword,
+        discoveredAt: row.discovered_at,
+        updatedAt: row.updated_at,
+        isApproved: Number(row.is_approved) === 1,
+      })),
+      page: currentPage,
+      pageSize: safePageSize,
+      total,
+      totalPages,
+    } satisfies ChannelListResult;
+  } finally {
+    await db.close();
+  }
+}
+
+export async function setChannelApproved(channelId: string, isApproved: boolean) {
+  if (!channelId.trim()) throw new Error("채널 ID가 필요합니다.");
+  let db;
+  try {
+    db = await openDatabase();
+  } catch {
+    throw new SearchDatabaseMissingError();
+  }
+  try {
+    const result = await db.prepare("UPDATE channels SET is_approved = ?, updated_at = ? WHERE channel_id = ?")
+      .run(isApproved ? 1 : 0, new Date().toISOString().slice(0, 19).replace("T", " "), channelId);
+    if (result.changes === 0) throw new Error("채널을 찾을 수 없습니다.");
+  } finally {
+    await db.close();
   }
 }
 

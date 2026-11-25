@@ -18,7 +18,6 @@ import { excludeChannel, isExcludedChannel, removeBroadcasters } from "./broadca
 
 const API = "https://www.googleapis.com/youtube/v3";
 const DB_PATH = getDatabasePath();
-const SIX_MONTHS_MS = 1000 * 60 * 60 * 24 * 30 * 6;
 const SHORTS_MAX_SECONDS = 3 * 60;
 const MIN_SUBSCRIBERS = 1000; // floor so tiny/hidden-sub channels don't explode the ratio
 const DEFAULT_KEYWORDS = [
@@ -83,8 +82,6 @@ async function main() {
   console.log(`excluded ${removed.channels} broadcaster channels and ${removed.videos} videos`);
 
   const now = toMysqlDateTime(new Date());
-  const cutoffIso = new Date(Date.now() - SIX_MONTHS_MS).toISOString();
-  const cutoffSql = toMysqlDateTime(new Date(Date.now() - SIX_MONTHS_MS));
 
   async function discoverChannels() {
     const keywords = [...extraKeywords.map((k) => `${k} 광고`), ...DEFAULT_KEYWORDS];
@@ -94,7 +91,7 @@ async function main() {
       for (let i = 0; i < pages; i++) {
         const params = {
           q: keyword, part: "snippet", type: "video", order: "viewCount",
-          publishedAfter: cutoffIso, maxResults: "50", relevanceLanguage: "ko",
+          maxResults: "50", relevanceLanguage: "ko",
         };
         if (pageToken) params.pageToken = pageToken;
         const data = await call("search", params, 100);
@@ -156,12 +153,11 @@ async function main() {
       try {
         const data = await call(
           "playlistItems",
-          { playlistId: ch.uploads_playlist_id, part: "contentDetails", maxResults: "30" },
+          { playlistId: ch.uploads_playlist_id, part: "contentDetails", maxResults: "50" },
           1,
         );
         for (const item of data.items ?? []) {
-          const published = item.contentDetails?.videoPublishedAt;
-          if (published && published >= cutoffIso) videoIds.push(item.contentDetails.videoId);
+          if (item.contentDetails?.videoId) videoIds.push(item.contentDetails.videoId);
         }
       } catch (error) {
         console.warn(`skip channel ${ch.channel_id}: ${error.message}`);
@@ -213,8 +209,7 @@ async function main() {
         shorts += isShort;
       }
     }
-    const pruned = await db.prepare("DELETE FROM videos WHERE published_at < ?").run(cutoffSql);
-    console.log(`saved ${saved} videos (${shorts} Shorts candidates), pruned ${pruned.changes} old ones`);
+    console.log(`saved ${saved} videos (${shorts} Shorts candidates)`);
   }
 
   try {

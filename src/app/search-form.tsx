@@ -42,8 +42,6 @@ export default function SearchForm({
   initialError = null,
 }: SearchFormProps) {
   const today = new Date();
-  const sixMonthsAgo = new Date(today);
-  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
   const toDateInput = (date: Date) => {
     const kst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
     return kst.toISOString().slice(0, 10);
@@ -52,6 +50,8 @@ export default function SearchForm({
   const [query, setQuery] = useState(initialQuery);
   const [viewCountMin, setViewCountMin] = useState("30");
   const [viewCountMax, setViewCountMax] = useState("100");
+  const sixMonthsAgo = new Date(today);
+  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
   const [dateFrom, setDateFrom] = useState(toDateInput(sixMonthsAgo));
   const [dateTo, setDateTo] = useState(toDateInput(today));
   const [loading, setLoading] = useState(false);
@@ -110,11 +110,16 @@ export default function SearchForm({
   return (
     <div className="flex min-h-screen flex-col items-center bg-zinc-50 px-4 py-10 dark:bg-black">
       <main className="w-full max-w-5xl">
-        <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">
-          연예인 광고 컨텐츠 검색
-        </h1>
+        <div className="flex items-center justify-between gap-4">
+          <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">
+            연예인 광고 컨텐츠 검색
+          </h1>
+          <a href="/channels" className="shrink-0 rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-900 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-50 dark:hover:bg-zinc-800">
+            채널 관리
+          </a>
+        </div>
         <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-          최근 6개월 내 수집된 롱폼·쇼츠 영상을 구분 없이, 구독자 수 대비 조회수가
+          수집된 롱폼·쇼츠 영상을 구분 없이, 구독자 수 대비 조회수가
           높은 순으로 20개씩 보여줍니다.
         </p>
 

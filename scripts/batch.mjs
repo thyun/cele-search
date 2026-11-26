@@ -11,13 +11,10 @@
  * Quota (units): search.list 100/call, channels.list 1/50 channels,
  * playlistItems.list 1/channel, videos.list 1/50 videos.
  */
-import { mkdirSync } from "node:fs";
-import path from "node:path";
-import { getDatabasePath, initializeDatabase, isMysqlEnabled, openDatabase, toMysqlDateTime } from "./database.mjs";
+import { initializeDatabase, openDatabase, toMysqlDateTime } from "./database.mjs";
 import { excludeChannel, isExcludedChannel, removeBroadcasters } from "./broadcasters.mjs";
 
 const API = "https://www.googleapis.com/youtube/v3";
-const DB_PATH = getDatabasePath();
 const SHORTS_MAX_SECONDS = 3 * 60;
 const MIN_SUBSCRIBERS = 1000; // floor so tiny/hidden-sub channels don't explode the ratio
 const DEFAULT_KEYWORDS = [
@@ -72,10 +69,6 @@ const chunk = (arr, size) =>
   Array.from({ length: Math.ceil(arr.length / size) }, (_, i) => arr.slice(i * size, i * size + size));
 
 async function main() {
-  if (!isMysqlEnabled()) {
-    mkdirSync(path.dirname(DB_PATH), { recursive: true });
-  }
-
   const db = await openDatabase();
   await initializeDatabase(db);
   const removed = await removeBroadcasters(db);
@@ -106,9 +99,7 @@ async function main() {
       console.log(`discovered via "${keyword}": ${found.size} channels so far`);
     }
 
-    const insertSql = isMysqlEnabled()
-      ? `INSERT IGNORE INTO channels (channel_id, title, discovered_keyword, discovered_at, updated_at, is_approved) VALUES (?, '', ?, ?, ?, 0)`
-      : `INSERT INTO channels (channel_id, title, discovered_keyword, discovered_at, updated_at, is_approved) VALUES (?, '', ?, ?, ?, 0) ON CONFLICT(channel_id) DO NOTHING`;
+    const insertSql = `INSERT IGNORE INTO channels (channel_id, title, discovered_keyword, discovered_at, updated_at, is_approved) VALUES (?, '', ?, ?, ?, 0)`;
     const insert = db.prepare(insertSql);
     for (const [id, keyword] of found) await insert.run(id, keyword, now, now);
   }
@@ -164,8 +155,7 @@ async function main() {
       }
     }
 
-    const upsertSql = isMysqlEnabled()
-      ? `INSERT INTO videos (video_id, channel_id, title, published_at, thumbnail_url, duration_seconds,
+    const upsertSql = `INSERT INTO videos (video_id, channel_id, title, published_at, thumbnail_url, duration_seconds,
           view_count, like_count, comment_count, efficiency_score, created_at, updated_at, is_short)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE
@@ -174,17 +164,7 @@ async function main() {
            comment_count = VALUES(comment_count), efficiency_score = VALUES(efficiency_score),
            duration_seconds = VALUES(duration_seconds), is_short = VALUES(is_short),
            created_at = IFNULL(videos.created_at, VALUES(created_at)),
-           updated_at = VALUES(updated_at)`
-      : `INSERT INTO videos (video_id, channel_id, title, published_at, thumbnail_url, duration_seconds,
-          view_count, like_count, comment_count, efficiency_score, created_at, updated_at, is_short)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(video_id) DO UPDATE SET
-           title = excluded.title, thumbnail_url = excluded.thumbnail_url,
-           view_count = excluded.view_count, like_count = excluded.like_count,
-           comment_count = excluded.comment_count, efficiency_score = excluded.efficiency_score,
-           duration_seconds = excluded.duration_seconds, is_short = excluded.is_short,
-           created_at = COALESCE(videos.created_at, excluded.created_at),
-           updated_at = excluded.updated_at`;
+           updated_at = VALUES(updated_at)`;
     const upsert = db.prepare(upsertSql);
     let saved = 0;
     let shorts = 0;
@@ -216,7 +196,7 @@ async function main() {
     if (mode !== "videos" && !skipDiscover) await discoverChannels();
     await refreshChannels();
     if (mode !== "channels") await collectVideos();
-    console.log(`done (${mode}). estimated quota used: ${quota} units. db: ${DB_PATH}`);
+    console.log(`done (${mode}). estimated quota used: ${quota} units. db: MySQL`);
   } finally {
     await db.close();
   }

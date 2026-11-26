@@ -58,7 +58,7 @@ npm run batch                                     # 기존 호환: 채널 배치
 영상 배치도 기존 채널의 구독자 수·uploads ID를 먼저 갱신하므로 최신 구독자 수로 영상 점수를 계산합니다.
 채널 배치 쿼터: `search.list` 100 units/회(기본 약 1,000 units) + `channels.list` 50개당 1 unit.
 영상 배치 쿼터: `channels.list` 50개당 1 unit + 채널당 `playlistItems.list` 1 unit + `videos.list` 50개당 1 unit (`search.list` 호출 없음).
-로컬 MySQL은 `MYSQL_*` 환경변수로 연결하고, 기본 DB는 `cele_search`를 사용합니다. `DB_PATH`는 SQLite 폴백용으로만 사용됩니다.
+로컬 MySQL은 `MYSQL_*` 환경변수로 연결하고, 기본 DB는 `cele_search`를 사용합니다. `DB_PATH` 설정은 더 이상 지원하지 않습니다.
 기존 DB는 배치 실행 시 `is_short` 필드를 자동으로 추가하고 기존 영상의 길이를 기준으로 값을 채웁니다.
 이전에 제외됐던 짧은 영상은 다음 배치에서 채널별 최근 영상 조회 범위에 포함되면 저장됩니다.
 방송사 제외는 채널명 규칙과 제외 ID에 기반합니다. 방송사 이름이 없는 별도 브랜드 채널은 누락될 수 있으며,
@@ -76,7 +76,7 @@ npm run dev
 ## 디렉터리 구조
 
 - `scripts/batch.mjs` — 채널 발굴/영상 수집/점수 계산 배치 (YouTube API 사용)
-- `src/lib/search.ts` — SQLite 조회 및 페이지네이션 (커서 = 이미 표시한 결과 수)
+- `src/lib/search.ts` — MySQL 조회 및 페이지네이션 (커서 = 이미 표시한 결과 수)
 - `src/app/api/search/route.ts` — 검색 API 라우트
 - `src/app/page.tsx` — 일반 폼 제출의 서버 검색 및 결과 렌더링
 - `src/app/search-form.tsx` — 검색 UI 및 결과 화면

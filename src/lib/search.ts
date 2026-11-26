@@ -1,62 +1,4 @@
-import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
-
-const DB_PATH = process.env.DB_PATH ?? path.join(process.cwd(), "data", "cele-search.db");
-
-export function isMysqlEnabled() {
-  return process.env.DB_DRIVER === "mysql" || Boolean(process.env.MYSQL_HOST || process.env.MYSQL_DATABASE);
-}
-
-function getMysqlConfig() {
-  return {
-    host: process.env.MYSQL_HOST ?? "127.0.0.1",
-    port: Number(process.env.MYSQL_PORT ?? 3306),
-    user: process.env.MYSQL_USER ?? "root",
-    password: process.env.MYSQL_PASSWORD ?? "",
-    database: process.env.MYSQL_DATABASE ?? "cele_search",
-    charset: "utf8mb4",
-    timezone: "Z",
-  };
-}
-
-async function openDatabase(options: { readOnly?: boolean } = {}) {
-  if (isMysqlEnabled()) {
-    const mysql = await import("mysql2/promise");
-    const connection = await mysql.default.createConnection(getMysqlConfig());
-    if (options.readOnly) {
-      await connection.execute("SET SESSION TRANSACTION READ ONLY");
-    }
-    return {
-      async close() {
-        await connection.end();
-      },
-      prepare(sql: string) {
-        return {
-          async all(...args: unknown[]) {
-            const values = args.flat() as never;
-            const [rows] = (await connection.execute(sql, values)) as [unknown[], unknown];
-            return rows;
-          },
-          async get(...args: unknown[]) {
-            const values = args.flat() as never;
-            const [rows] = (await connection.execute(sql, values)) as [unknown[], unknown];
-            return (rows as Record<string, unknown>[])[0] ?? undefined;
-          },
-          async run(...args: unknown[]) {
-            const values = args.flat() as never;
-            const [result] = (await connection.execute(sql, values)) as [unknown, unknown];
-            const header = result as { affectedRows?: number; insertId?: number };
-            return {
-              changes: Number(header?.affectedRows ?? 0),
-              lastInsertRowid: Number(header?.insertId ?? 0),
-            };
-          },
-        };
-      },
-    };
-  }
-  return new DatabaseSync(DB_PATH, options);
-}
+import { openDatabase } from "../../scripts/database.mjs";
 const PAGE_SIZE = 20;
 
 export interface VideoResult {
@@ -148,10 +90,7 @@ export async function listChannels(page = 1, pageSize = 20, status: "all" | "pen
   }
 
   try {
-    const where = isMysqlEnabled()
-      ? `WHERE (? = 'all' OR (? = 'pending' AND is_approved = 0) OR (? = 'approved' AND is_approved = 1))
-         AND (? = '' OR title LIKE ? ESCAPE '\\\\')`
-      : `WHERE (? = 'all' OR (? = 'pending' AND is_approved = 0) OR (? = 'approved' AND is_approved = 1))
+    const where = `WHERE (? = 'all' OR (? = 'pending' AND is_approved = 0) OR (? = 'approved' AND is_approved = 1))
          AND (? = '' OR title LIKE ? ESCAPE '\\')`;
     const like = search ? `%${search.replace(/[\\%_]/g, "\\$&")}%` : "";
     const countRow = await db.prepare(`SELECT COUNT(*) AS total FROM channels ${where}`).get(status, status, status, search, like);
@@ -237,10 +176,9 @@ export function searchVideos(userQuery?: string, cursor?: string, filters: Searc
     throw new InvalidSearchFiltersError("시작일은 종료일보다 이전이어야 합니다.");
   }
 
-  const likeEscape = isMysqlEnabled() ? "ESCAPE '\\\\'" : "ESCAPE '\\'";
+  const likeEscape = "ESCAPE '\\\\'";
 
-  if (isMysqlEnabled()) {
-    return (async () => {
+  return (async () => {
       let db;
       try {
         db = await openDatabase({ readOnly: true });
@@ -287,51 +225,4 @@ export function searchVideos(userQuery?: string, cursor?: string, filters: Searc
         await db.close();
       }
     })();
-  }
-
-  let db: DatabaseSync;
-  try {
-    db = new DatabaseSync(DB_PATH, { readOnly: true });
-  } catch {
-    throw new SearchDatabaseMissingError();
-  }
-  try {
-    const like = query ? `%${query.replace(/[\\%_]/g, "\\$&")}%` : null;
-    const rows = db
-      .prepare(
-        `SELECT v.video_id, v.title, c.title AS channel_title, c.subscriber_count,
-                v.published_at, v.thumbnail_url, v.duration_seconds, v.view_count,
-                v.like_count, v.comment_count, v.efficiency_score
-         FROM videos v JOIN channels c ON c.channel_id = v.channel_id
-         WHERE (? IS NULL OR v.title LIKE ? ${likeEscape} OR c.title LIKE ? ${likeEscape})
-           AND v.view_count >= ? AND v.view_count <= ?
-           AND (? IS NULL OR v.published_at >= ?)
-           AND (? IS NULL OR v.published_at < date(?, '+1 day'))
-         ORDER BY v.efficiency_score DESC, v.view_count DESC
-         LIMIT ?`,
-      )
-      .all(like, like, like, viewCountMin, viewCountMax, dateFrom, dateFrom, dateTo, dateTo, limit + 1) as unknown as VideoRow[];
-
-    const results: VideoResult[] = rows.slice(0, limit).map((row) => ({
-      videoId: row.video_id,
-      title: row.title,
-      channelTitle: row.channel_title,
-      subscriberCount: row.subscriber_count,
-      publishedAt: row.published_at,
-      thumbnailUrl: row.thumbnail_url ?? "",
-      durationSeconds: row.duration_seconds,
-      viewCount: row.view_count,
-      likeCount: row.like_count,
-      commentCount: row.comment_count,
-      efficiencyScore: row.efficiency_score,
-      url: `https://www.youtube.com/watch?v=${row.video_id}`,
-    }));
-    return {
-      query,
-      results,
-      nextCursor: rows.length > limit ? String(limit) : null,
-    };
-  } finally {
-    db.close();
-  }
 }
